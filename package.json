@@ -1,0 +1,25 @@
+{
+  "name": "llm-web-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bunx concurrently -n server,web -c green,cyan \"bun run dev:server\" \"bun run dev:web\"",
+    "dev:server": "cd apps/server && bun run dev",
+    "dev:web": "cd apps/web && bun run dev",
+    "build": "bun --filter @llm-web-chat/* run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "drizzle-kit": "^0.31.4",
+    "shadcn": "^3.2.1",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.7"
+  }
+}

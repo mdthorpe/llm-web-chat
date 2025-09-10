@@ -1,0 +1,33 @@
+@baseUrl = http://localhost:3001
+
+### Health
+GET {{baseUrl}}/health
+
+### List Models
+GET {{baseUrl}}/models
+
+### Create Chat
+# @name createChat
+POST {{baseUrl}}/chats
+content-type: application/json
+
+{
+  "name": "Test Chat",
+  "modelId": "anthropic.claude-3-5-sonnet-20241022-v2:0"
+}
+
+### Extract chat id
+@chatId = {{createChat.response.body.$.id}}
+
+### Send Message
+# @name sendMessage
+POST http://localhost:3001/messages
+content-type: application/json
+
+{
+  "chatId": "{{chatId}}",
+  "content": "Hello! Can you summarize Bun for me?"
+}
+
+### Get Messages
+GET http://localhost:3001/chats/{{chatId}}/messages
