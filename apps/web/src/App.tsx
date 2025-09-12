@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 
@@ -30,33 +29,12 @@ export default function App() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
 
-  const [newChatName, setNewChatName] = useState('');
   const [newChatModelId, setNewChatModelId] = useState('');
   const [messageText, setMessageText] = useState('');
+  const [startMessage, setStartMessage] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const [modelsRes, chatsRes] = await Promise.all([
-          fetch(`${API_BASE}/models`),
-          fetch(`${API_BASE}/chats`),
-        ]);
-        const [modelsJson, chatsJson] = await Promise.all([modelsRes.json(), chatsRes.json()]);
-        setModels(modelsJson);
-        // Most recent first
-        setChats([...chatsJson].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt)));
-      } catch (err) {
-        console.error('Failed to load initial data', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -77,31 +55,7 @@ export default function App() {
     [chats, selectedChatId]
   );
 
-  async function handleCreateChat(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newChatName.trim() || !newChatModelId) return;
-
-    try {
-      const res = await fetch(`${API_BASE}/chats`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: newChatName.trim(), modelId: newChatModelId }),
-      });
-      if (!res.ok) {
-        const detail = await safeJson(res);
-        throw new Error(`Create chat failed: ${res.status} ${JSON.stringify(detail)}`);
-      }
-      const chat: Chat = await res.json();
-      setChats((prev) => [chat, ...prev]);
-      setSelectedChatId(chat.id);
-      setNewChatName('');
-      setNewChatModelId('');
-      setMessages([]);
-    } catch (err) {
-      console.error(err);
-      alert('Failed to create chat');
-    }
-  }
+  
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
@@ -156,46 +110,91 @@ export default function App() {
     }
   }
 
+  async function handleStartChat() {
+    const text = startMessage.trim();
+    if (!text || !newChatModelId) return;
+    setLoading(true);
+    try {
+      const createRes = await fetch(`${API_BASE}/chats`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'New Chat', modelId: newChatModelId }),
+      });
+      if (!createRes.ok) throw new Error('Create chat failed');
+      const chat: Chat = await createRes.json();
+      setChats((prev) => [chat, ...prev]);
+      setSelectedChatId(chat.id);
+
+      const sendRes = await fetch(`${API_BASE}/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chatId: chat.id, content: text }),
+      });
+      if (!sendRes.ok) throw new Error('Send message failed');
+
+      const msgsRes = await fetch(`${API_BASE}/chats/${chat.id}/messages`);
+      setMessages(await msgsRes.json());
+
+      // Try to auto-generate a title (endpoint may not exist yet)
+      const titleRes = await fetch(`${API_BASE}/chats/${chat.id}/generate-title`, { method: 'POST' });
+      if (titleRes.ok) {
+        const { title } = await titleRes.json();
+        if (title) {
+          setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, name: title, updatedAt: Date.now() } : c)));
+        }
+      }
+
+      setStartMessage('');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to start chat');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const [configRes, modelsRes, chatsRes] = await Promise.all([
+          fetch(`${API_BASE}/config`),
+          fetch(`${API_BASE}/models`),
+          fetch(`${API_BASE}/chats`),
+        ]);
+        const [{ defaultModelId }, modelsJson, chatsJson] = await Promise.all([
+          configRes.json(), modelsRes.json(), chatsRes.json()
+        ]);
+  
+        setModels(modelsJson);
+        setChats([...chatsJson].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt)));
+  
+        if (!newChatModelId && defaultModelId && modelsJson.some((m: any) => m.id === defaultModelId)) {
+          setNewChatModelId(defaultModelId);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
   return (
     <div className="min-h-screen grid grid-cols-1 md:grid-cols-[320px_1fr]">
       {/* Sidebar */}
       <aside className="border-r p-4 space-y-6">
         <h1 className="text-xl font-semibold">LLM Web Chat</h1>
 
-        <form className="space-y-3" onSubmit={handleCreateChat}>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Chat name</label>
-            <Input
-              placeholder="e.g. Ideas, Debugging"
-              value={newChatName}
-              onChange={(e) => setNewChatName(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Model</label>
-            <select
-              className="w-full rounded border px-3 py-2 bg-white"
-              value={newChatModelId}
-              onChange={(e) => setNewChatModelId(e.target.value)}
-            >
-              <option value="">Select a model…</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!newChatName.trim() || !newChatModelId || loading}
-          >
-            New Chat
-          </Button>
-        </form>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            setSelectedChatId(null);
+            setStartMessage('');
+          }}
+        >
+          New Chat
+        </Button>
 
         <div className="space-y-2">
           <div className="text-sm font-medium">Chats</div>
@@ -219,7 +218,35 @@ export default function App() {
       {/* Main */}
       <main className="p-4 flex flex-col h-[100svh] md:h-screen">
         {!selectedChat ? (
-          <div className="m-auto text-gray-500">Select or create a chat to begin.</div>
+          <div className="m-auto max-w-2xl w-full space-y-4">
+            <h2 className="text-2xl font-semibold text-center">Start a new chat</h2>
+            <Textarea
+              className="min-h-[160px] resize-y"
+              placeholder="Type your first message to start the conversation…"
+              value={startMessage}
+              onChange={(e) => setStartMessage(e.target.value)}
+            />
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Model</label>
+              <select
+                className="w-full rounded border px-3 py-2 bg-white"
+                value={newChatModelId}
+                onChange={(e) => setNewChatModelId(e.target.value)}
+              >
+                <option value="">Select a model…</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleStartChat} disabled={!startMessage.trim() || !newChatModelId || loading}>
+                Start chat
+              </Button>
+            </div>
+          </div>
         ) : (
           <>
             <div className="flex-1 overflow-auto space-y-3">

@@ -6,6 +6,9 @@ GET {{baseUrl}}/health
 ### List Models
 GET {{baseUrl}}/models
 
+### List Config
+GET {{baseUrl}}/config
+
 ### Create Chat
 # @name createChat
 POST {{baseUrl}}/chats
@@ -21,7 +24,7 @@ content-type: application/json
 
 ### Send Message
 # @name sendMessage
-POST http://localhost:3001/messages
+POST http://{{baseUrl}}/messages
 content-type: application/json
 
 {
