@@ -13,15 +13,13 @@ export type ChatMessage = {
 // Add this before the generateWithBedrock function
 const MOCK_MODE = process.env.MOCK_BEDROCK === 'true';
 
-export async function generateWithBedrock(modelId: string, conversation: ChatMessage[]): Promise<string> {
+export async function generateWithBedrock(modelId: string, conversation: ChatMessage[], p0: { reqId?: string; chatId: string; messageId: `${string}-${string}-${string}-${string}-${string}`; }): Promise<string> {
 
   // Mock mode for testing without AWS credentials
   if (MOCK_MODE) {
     const lastMessage = conversation[conversation.length - 1];
     return `[Mock Response] I received your message: "${lastMessage?.content}"\n\nThis is a mock response. To use real AI responses, set MOCK_BEDROCK=false and configure AWS credentials.`;
   }
-
-  
 
   if (!modelId) return 'Model ID is missing.';
 

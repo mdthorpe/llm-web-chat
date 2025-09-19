@@ -12,6 +12,28 @@
   const app = new Hono();
   app.use('*', cors());
 
+  app.use('*', async (c, next) => {
+    const startedAt = Date.now();
+    const reqId = randomUUID();
+    c.set('reqId', reqId);
+    await next();
+    const durationMs = Date.now() - startedAt;
+  
+    // attach request id to response
+    try { c.res.headers.set('x-request-id', reqId); } catch {}
+  
+    // structured log
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      event: 'http.request',
+      reqId,
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+      status: c.res.status,
+      durationMs,
+    }));
+  });
+
   // Health check
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -152,12 +174,15 @@ app.post('/chats/:id/generate-title', async (c) => {
       .where(eq(messages.chatId, chatId))
       .orderBy(messages.createdAt);
 
+    const reqId = c.get('reqId'); // set by the middleware
+    
     const assistantText = await generateWithBedrock(
       chat.modelId,
       history.map((m) => ({
         role: m.role as 'user' | 'assistant' | 'system',
         content: m.content,
       })),
+      { reqId, chatId, messageId } // pass context
     );
 
     const responseId = randomUUID();
