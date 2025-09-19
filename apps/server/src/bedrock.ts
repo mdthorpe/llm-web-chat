@@ -21,9 +21,11 @@ export async function generateWithBedrock(modelId: string, conversation: ChatMes
     return `[Mock Response] I received your message: "${lastMessage?.content}"\n\nThis is a mock response. To use real AI responses, set MOCK_BEDROCK=false and configure AWS credentials.`;
   }
 
+  
+
   if (!modelId) return 'Model ID is missing.';
 
-  if (modelId.startsWith('anthropic.')) {
+  if ((process.env.BEDROCK_INFERENCE_PROFILE_ARN) || modelId.startsWith('anthropic.')) {
     const systemPrompt = conversation
       .filter((m) => m.role === 'system')
       .map((m) => m.content)
@@ -46,13 +48,16 @@ export async function generateWithBedrock(modelId: string, conversation: ChatMes
       ...(systemPrompt ? { system: systemPrompt } : {}),
     } as const;
 
+    const inferenceProfileArn = process.env.BEDROCK_INFERENCE_PROFILE_ARN;
+    const targetModelId = inferenceProfileArn || modelId;
+
     const command = new InvokeModelCommand({
-      modelId,
+      modelId: targetModelId,
       contentType: 'application/json',
       accept: 'application/json',
       body: new TextEncoder().encode(JSON.stringify(requestBody)),
-    });
-
+    } as any);
+    
     const response = await bedrockClient.send(command);
     const json = JSON.parse(new TextDecoder().decode(response.body));
     const text: string | undefined = json?.content?.[0]?.text;
