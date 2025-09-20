@@ -12,8 +12,12 @@ export type ChatMessage = {
 
 // Add this before the generateWithBedrock function
 const MOCK_MODE = process.env.MOCK_BEDROCK === 'true';
+const DEFAULT_SUMMARIZER_MODEL_ID = process.env.SUMMARIZER_MODEL_ID ?? 'anthropic.claude-3-haiku-20240307-v1:0';
 
-export async function generateWithBedrock(modelId: string, conversation: ChatMessage[], p0: { reqId?: string; chatId: string; messageId: `${string}-${string}-${string}-${string}-${string}`; }): Promise<string> {
+export async function generateWithBedrock(
+  modelId: string, 
+  conversation: ChatMessage[], 
+  ctx?: { reqId?: string; chatId?: string; messageId?: `${string}-${string}-${string}-${string}-${string}`; }): Promise<string> {
 
   // Mock mode for testing without AWS credentials
   if (MOCK_MODE) {
@@ -64,4 +68,17 @@ export async function generateWithBedrock(modelId: string, conversation: ChatMes
 
   // TODO: Add Llama/other providers via Bedrock request shapes
   return 'This model is not yet supported in the server. Try an Anthropic model.';
+}
+
+export async function summarizeText(
+  text: string,
+  modelIdOverride?: string,
+  ctx?: { reqId?: string; chatId?: string; messageId?: `${string}-${string}-${string}-${string}-${string}`; }
+): Promise<string> {
+  const modelForSummary = modelIdOverride ?? DEFAULT_SUMMARIZER_MODEL_ID;
+  const prompt: ChatMessage[] = [
+    { role: 'system', content: 'Summarize in 1–2 sentences, plain text, no bullets.' },
+    { role: 'user', content: text.slice(0, 4000) }
+  ];
+  return generateWithBedrock(modelForSummary, prompt, ctx);
 }

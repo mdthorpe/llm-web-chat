@@ -7,10 +7,13 @@
   import { eq } from 'drizzle-orm';
   import { randomUUID } from 'crypto';
   import { generateWithBedrock } from './bedrock';
+  import { summarizeText } from './bedrock';
   import { MODEL_CATALOG, SUPPORTED_MODEL_IDS } from './config/models';
   import { synthesizeToMp3 } from './tts';
 
-  const app = new Hono();
+  type AppBindings = { Variables: { reqId: string } };
+
+  const app = new Hono<AppBindings>();
   app.use('*', cors());
 
   app.use('*', async (c, next) => {
@@ -200,6 +203,23 @@ app.post('/chats/:id/generate-title', async (c) => {
     return c.json({ messageId, responseId, text: assistantText });
   });
 
+  const SummarizeSchema = z.object({
+    text: z.string().min(1),
+    modelId: z.string().optional(), // optional override
+  });
+  
+  app.post('/summarize', zValidator('json', SummarizeSchema), async (c) => {
+    const { text, modelId } = c.req.valid('json');
+    try {
+      const summary = await summarizeText(text, modelId, { reqId: c.get('reqId') });
+      return c.json({ summary });
+    } catch (err) {
+      console.error('Summarize error', err);
+      return c.json({ error: 'Summarize failed' }, 502);
+    }
+  });
+
+  // Text to speech
   const TtsSchema = z.object({
     text: z.string().min(1),
     voiceId: z.string().optional(),
@@ -208,7 +228,9 @@ app.post('/chats/:id/generate-title', async (c) => {
   app.post('/tts', zValidator('json', TtsSchema), async (c) => {
     const { text, voiceId } = c.req.valid('json');
     const bytes = await synthesizeToMp3(text, voiceId);
-    return new Response(bytes, {
+    const ab = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(ab).set(bytes);
+    return new Response(ab, {
       status: 200,
       headers: {
         'content-type': 'audio/mpeg',
