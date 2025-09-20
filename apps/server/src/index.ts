@@ -192,15 +192,23 @@ app.post('/chats/:id/generate-title', async (c) => {
     const responseId = randomUUID();
     const responseTime = new Date();
 
-    await db.insert(messages).values({
-      id: responseId,
-      chatId,
-      role: 'assistant',
-      content: assistantText,
-      createdAt: responseTime
-    });
+    let summary: string | undefined;
+    const sentenceCount = assistantText.split(/[.!?]/).filter(Boolean).length;
+    if (sentenceCount > 3) {
+      try {
+        summary = await summarizeText(assistantText, undefined, { reqId: c.get('reqId') });
+      } catch {}
+    }
 
-    return c.json({ messageId, responseId, text: assistantText });
+    await db.insert(messages).values({ 
+      id: responseId, 
+      chatId, 
+      role: 'assistant', 
+      content: assistantText, 
+      summary, 
+      createdAt: responseTime });
+
+    return c.json({ messageId, responseId, text: assistantText, summary });
   });
 
   const SummarizeSchema = z.object({

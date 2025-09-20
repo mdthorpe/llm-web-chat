@@ -7,7 +7,7 @@ export const chats = sqliteTable('chats', {
   name: text('name').notNull(),
   modelId: text('model_id').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
 export const messages = sqliteTable('messages', {
@@ -17,7 +17,8 @@ export const messages = sqliteTable('messages', {
     .references(() => chats.id, { onDelete: 'cascade' }),
   role: text('role', { enum: ['user', 'assistant', 'system'] }).notNull(),
   content: text('content').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  summary: text('summary')
 });
 
 export const chatsRelations = relations(chats, ({ many }) => ({

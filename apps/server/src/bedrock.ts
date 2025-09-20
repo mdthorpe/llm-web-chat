@@ -70,6 +70,14 @@ export async function generateWithBedrock(
   return 'This model is not yet supported in the server. Try an Anthropic model.';
 }
 
+function enforceOneSentenceSummary(s: string): string {
+  const firstSentence = s.split(/[.!?]/, 1)[0] ?? '';
+  const words = firstSentence.trim().split(/\s+/).slice(0, 12);
+  const out = words.join(' ').replace(/["'`]+/g, '').trim();
+  if (!out) return 'Here is a brief overview.';
+  return out.endsWith('.') ? out : `${out}.`;
+}
+
 export async function summarizeText(
   text: string,
   modelIdOverride?: string,
@@ -77,8 +85,14 @@ export async function summarizeText(
 ): Promise<string> {
   const modelForSummary = modelIdOverride ?? DEFAULT_SUMMARIZER_MODEL_ID;
   const prompt: ChatMessage[] = [
-    { role: 'system', content: 'Summarize in 1–2 sentences, plain text, no bullets.' },
-    { role: 'user', content: text.slice(0, 4000) }
+    {
+      role: 'system',
+      content:
+      "Return EXACTLY ONE friendly sentence (<= 12 words) that introduces the reply, like 'Here is some information about <topic>.' No quotes, no lists, no markdown, no extra text. End with a period.",
+    },
+    { role: 'user', content: text.slice(0, 40) }
   ];
-  return generateWithBedrock(modelForSummary, prompt, ctx);
+  const raw = await generateWithBedrock(modelForSummary, prompt, ctx);
+  return enforceOneSentenceSummary(raw);
+
 }

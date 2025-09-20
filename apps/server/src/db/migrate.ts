@@ -1,13 +1,25 @@
-// apps/server/src/db/migrate.ts
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 
 const sqlite = new Database('llm-web-chat.sqlite');
+const dir = join(process.cwd(), 'drizzle');
+const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
 
-// Read the generated SQL file
-const sql = readFileSync(join(process.cwd(), 'drizzle', '0000_initial.sql'), 'utf8');
+for (const f of files) {
+  const sql = readFileSync(join(dir, f), 'utf8');
+  try {
+    sqlite.exec(sql);
+    console.log(`Applied ${f}`);
+  } catch (err) {
+    const msg = String(err);
+    // Skip re-applying objects that already exist
+    if (msg.includes('already exists')) {
+      console.log(`Skipping ${f} (already applied)`);
+      continue;
+    }
+    throw err;
+  }
+}
 
-// Execute the SQL
-sqlite.exec(sql);
-console.log('Migrations applied');
+console.log('Migrations applied.');

@@ -19,6 +19,7 @@ type Message = {
   role: Role;
   content: string;
   createdAt: number | string;
+  summary?: string | undefined;
 };
 
 import { API_BASE } from '@/lib/config';
@@ -36,6 +37,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sortDesc, setSortDesc] = useState(true);
+  
   const toMs = (v: number | string) =>
     typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
 
@@ -96,6 +98,13 @@ export default function App() {
       }
       const json = await res.json();
       const assistantText: string | undefined = json?.text;
+      const assistantSummary: string | undefined = json?.summary;
+      const responseId: string | undefined = json?.responseId;
+
+      if (assistantSummary && responseId) {
+        setSummariesById((prev) => ({ ...prev, [responseId]: assistantSummary }));
+        void playTts(assistantSummary);
+      }
 
       const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
       const msgsJson = await msgsRes.json();
@@ -292,6 +301,9 @@ export default function App() {
             <div className="flex-1 overflow-auto space-y-3">
               {messages.map((m) => (
                 <div key={m.id} className="flex">
+                  {m.role !== 'user' && (m as any).summary && (
+                    <div className="mb-1 text-sm text-gray-600">{m.summary}</div>
+                  )}  
                   <Card
                     className={`px-3 py-2 max-w-[80%] whitespace-pre-wrap ${
                       m.role === 'user'
@@ -302,12 +314,12 @@ export default function App() {
                     {m.content}
                   </Card>
                   {m.role !== 'user' && (
-                  <div className="ml-2 self-center">
-                    <Button variant="ghost" size="sm" onClick={() => playTts(m.content)}>
-                      ▶︎ Play
-                    </Button>
-                  </div>
-                )}
+                <div className="ml-2 self-center">
+                  <Button variant="ghost" size="sm" onClick={() => playTts(m.content)}>
+                    ▶︎ Play
+                  </Button>
+                </div>
+              )}
                 </div>
               ))}
             </div>
