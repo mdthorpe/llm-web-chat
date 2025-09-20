@@ -302,12 +302,12 @@ export default function App() {
                     {m.content}
                   </Card>
                   {m.role !== 'user' && (
-      <div className="ml-2 self-center">
-        <Button variant="ghost" size="sm" onClick={() => playTts(m.content)}>
-          ▶︎ Play
-        </Button>
-      </div>
-    )}
+                  <div className="ml-2 self-center">
+                    <Button variant="ghost" size="sm" onClick={() => playTts(m.content)}>
+                      ▶︎ Play
+                    </Button>
+                  </div>
+                )}
                 </div>
               ))}
             </div>
