@@ -35,6 +35,9 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sortDesc, setSortDesc] = useState(true);
+  const toMs = (v: number | string) =>
+    typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -55,17 +58,23 @@ export default function App() {
     [chats, selectedChatId]
   );
 
+  const sortedChats = useMemo(() => {
+    const copy = [...chats];
+    copy.sort((a, b) =>
+      sortDesc ? toMs(b.updatedAt) - toMs(a.updatedAt) : toMs(a.updatedAt) - toMs(b.updatedAt)
+    );
+    return copy;
+  }, [chats, sortDesc]);
+
   
 
-  async function handleSendMessage(e: React.FormEvent) {
-    e.preventDefault();
+  async function doSendMessage() {
     if (!selectedChatId || !messageText.trim()) return;
 
     const text = messageText.trim();
     setMessageText('');
     setSending(true);
 
-    // optimistic user message
     const tempUser: Message = {
       id: `temp-user-${Date.now()}`,
       chatId: selectedChatId,
@@ -88,7 +97,6 @@ export default function App() {
       const json = await res.json();
       const assistantText: string | undefined = json?.text;
 
-      // reload from server to get canonical history
       const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
       const msgsJson = await msgsRes.json();
       setMessages(msgsJson);
@@ -99,7 +107,6 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert('Failed to send message');
-      // rollback optimistic message by refetching
       try {
         const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
         const msgsJson = await msgsRes.json();
@@ -108,6 +115,11 @@ export default function App() {
     } finally {
       setSending(false);
     }
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    await doSendMessage();
   }
 
   async function handleStartChat() {
@@ -167,7 +179,7 @@ export default function App() {
         ]);
   
         setModels(modelsJson);
-        setChats([...chatsJson].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt)));
+        setChats([...chatsJson].sort((a, b) => toMs(b.updatedAt) - toMs(a.updatedAt)));
   
         if (!newChatModelId && defaultModelId && modelsJson.some((m: any) => m.id === defaultModelId)) {
           setNewChatModelId(defaultModelId);
@@ -197,10 +209,20 @@ export default function App() {
         </Button>
 
         <div className="space-y-2">
-          <div className="text-sm font-medium">Chats</div>
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">Chats</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSortDesc((v) => !v)}
+              title={sortDesc ? 'Sorting: Newest first' : 'Sorting: Oldest first'}
+            >
+              {sortDesc ? 'Newest' : 'Oldest'}
+            </Button>
+          </div>
           <div className="h-[40vh] overflow-auto divide-y rounded-md border">
             {chats.length === 0 && <div className="p-3 text-sm text-gray-500">No chats yet</div>}
-            {chats.map((c) => (
+            {sortedChats.map((c) => (
               <Button
                 key={c.id}
                 variant={selectedChatId === c.id ? "secondary" : "ghost"}
@@ -271,6 +293,12 @@ export default function App() {
                 placeholder="Type your message…"
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void doSendMessage();
+                }
+              }}
                 disabled={!selectedChatId || sending}
                 rows={2}
               />
