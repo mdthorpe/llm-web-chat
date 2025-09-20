@@ -122,6 +122,24 @@ export default function App() {
     await doSendMessage();
   }
 
+  async function playTts(text: string) {
+    try {
+      const res = await fetch(`${API_BASE}/tts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }), // optionally: { text, voiceId: 'Joanna' }
+      });
+      if (!res.ok) throw new Error(`TTS failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.play();
+    } catch (err) {
+      console.error('TTS error', err);
+      alert('Failed to play TTS');
+    }
+  }
+
   async function handleStartChat() {
     const text = startMessage.trim();
     if (!text || !newChatModelId) return;
@@ -283,6 +301,13 @@ export default function App() {
                   >
                     {m.content}
                   </Card>
+                  {m.role !== 'user' && (
+      <div className="ml-2 self-center">
+        <Button variant="ghost" size="sm" onClick={() => playTts(m.content)}>
+          ▶︎ Play
+        </Button>
+      </div>
+    )}
                 </div>
               ))}
             </div>

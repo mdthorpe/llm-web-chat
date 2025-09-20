@@ -12,6 +12,7 @@
     },
     "dependencies": {
         "@aws-sdk/client-bedrock-runtime": "^3.893.0",
+        "@aws-sdk/client-polly": "^3.893.0",
         "@hono/zod-validator": "^0.4.1",
         "drizzle-orm": "^0.44.5",
         "hono": "^4.4.10",

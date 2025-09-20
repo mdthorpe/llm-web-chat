@@ -8,6 +8,7 @@
   import { randomUUID } from 'crypto';
   import { generateWithBedrock } from './bedrock';
   import { MODEL_CATALOG, SUPPORTED_MODEL_IDS } from './config/models';
+  import { synthesizeToMp3 } from './tts';
 
   const app = new Hono();
   app.use('*', cors());
@@ -199,6 +200,23 @@ app.post('/chats/:id/generate-title', async (c) => {
     return c.json({ messageId, responseId, text: assistantText });
   });
 
+  const TtsSchema = z.object({
+    text: z.string().min(1),
+    voiceId: z.string().optional(),
+  });
+
+  app.post('/tts', zValidator('json', TtsSchema), async (c) => {
+    const { text, voiceId } = c.req.valid('json');
+    const bytes = await synthesizeToMp3(text, voiceId);
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'content-type': 'audio/mpeg',
+        'cache-control': 'no-store',
+      },
+    });
+  });
+  
   export default app;
 
   // Start the server
