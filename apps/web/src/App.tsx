@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { loadSettings, saveSettings, DEFAULT_SETTINGS, type AppSettings } from '@/lib/settings';
 
 
@@ -52,6 +54,23 @@ export default function App() {
   useEffect(() => {
     setSettings(loadSettings());
   }, []);
+
+    // Apply theme to <html> using the .dark class
+  useEffect(() => {
+    const root = document.documentElement;
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = settings.theme === 'dark' || (settings.theme === 'system' && prefersDark);
+    root.classList.toggle('dark', isDark);
+  }, [settings.theme]);
+
+  // Keep in sync when theme = system and OS preference changes
+  useEffect(() => {
+    if (settings.theme !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => document.documentElement.classList.toggle('dark', mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [settings.theme]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -249,7 +268,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen grid grid-cols-1 md:grid-cols-[320px_1fr]">
+    <div className="min-h-screen grid grid-cols-1 md:grid-cols-[320px_1fr] ">
       {/* Sidebar */}
       <aside className="border-r p-4 space-y-6">
         <h1 className="text-xl font-semibold">LLM Web Chat</h1>
@@ -306,15 +325,32 @@ export default function App() {
             ))}
           </div>
           <div className="pt-3">
-            <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
+            <label className="text-sm font-medium block mb-1">Theme</label>
+            <Select
+              value={settings.theme}
+              onValueChange={(v) =>
+                setSettings(saveSettings({ theme: v as 'light' | 'dark' | 'system' }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Theme" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="pt-3 flex items-center justify-between">
+            <span className="text-sm">Speak summaries</span>
+            <Switch
               checked={settings.speakSummaries}
-              onChange={(e) => setSettings(saveSettings({ speakSummaries: e.target.checked }))}
+              onCheckedChange={(v) =>
+                setSettings(saveSettings({ speakSummaries: v }))
+              }
+              aria-label="Toggle speak summaries"
             />
-              Speak summaries
-            </label>
           </div>
         </div>
       </aside>
@@ -340,18 +376,22 @@ export default function App() {
             />
             <div className="space-y-1">
               <label className="text-sm font-medium">Model</label>
-              <select
-                className="w-full rounded border px-3 py-2 bg-white"
+              <label className="text-sm font-medium">Model</label>
+              <Select
                 value={newChatModelId}
-                onChange={(e) => setNewChatModelId(e.target.value)}
+                onValueChange={(v) => setNewChatModelId(v)}
               >
-                <option value="">Select a model…</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a model…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end">
               <Button onClick={handleStartChat} disabled={!startMessage.trim() || !newChatModelId || loading}>
