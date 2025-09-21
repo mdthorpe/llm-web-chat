@@ -71,8 +71,6 @@ export default function App() {
     return copy;
   }, [chats, sortDesc]);
 
-  
-
   async function doSendMessage() {
     if (!selectedChatId || !messageText.trim()) return;
 
@@ -198,6 +196,23 @@ export default function App() {
     }
   }
 
+  async function handleDeleteChat(id: string) {
+    const ok = window.confirm('Delete this chat? This cannot be undone.');
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE}/chats/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+      setChats((prev) => prev.filter((c) => c.id !== id));
+      if (selectedChatId === id) {
+        setSelectedChatId(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete chat');
+    }
+  }
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -256,15 +271,29 @@ export default function App() {
           <div className="h-[40vh] overflow-auto divide-y rounded-md border">
             {chats.length === 0 && <div className="p-3 text-sm text-gray-500">No chats yet</div>}
             {sortedChats.map((c) => (
-              <Button
-                key={c.id}
-                variant={selectedChatId === c.id ? "secondary" : "ghost"}
-                className="w-full justify-start p-3 h-auto flex-col items-start"
-                onClick={() => setSelectedChatId(c.id)}
-              >
-                <div className="font-medium">{c.name}</div>
-                <div className="text-xs text-gray-500">{c.modelId}</div>
-              </Button>
+              <div key={c.id} className="relative">
+                <Button
+                  variant={selectedChatId === c.id ? "secondary" : "ghost"}
+                  className="w-full justify-start p-3 h-auto flex-col items-start"
+                  onClick={() => setSelectedChatId(c.id)}
+                >
+                  <div className="font-medium">{c.name}</div>
+                  <div className="text-xs text-gray-500">{c.modelId}</div>
+                </Button>
+                <button
+                  aria-label="Delete chat"
+                  title="Delete chat"
+                  className="absolute right-2 top-2 text-gray-400 opacity-50 transition-opacity transition-colors
+                            group-hover:opacity-100 hover:text-red-600 focus-visible:opacity-100
+                            hover:ring-1 hover:ring-red-200 hover:bg-red-50 rounded"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDeleteChat(c.id);
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
             ))}
           </div>
           <div className="pt-3">

@@ -250,6 +250,13 @@ app.post('/chats/:id/generate-title', async (c) => {
     }
   });
 
+  app.delete('/chats/:id', async (c) => {
+    const chatId = c.req.param('id');
+    // messages have ON DELETE CASCADE, so this removes the chat and its messages
+    await db.delete(chats).where(eq(chats.id, chatId));
+    return c.json({ ok: true });
+  });
+
   // Text to speech
   const TtsSchema = z.object({
     text: z.string().min(1),
