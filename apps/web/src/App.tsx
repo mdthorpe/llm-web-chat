@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
+import { loadSettings, saveSettings, DEFAULT_SETTINGS, type AppSettings } from '@/lib/settings';
+
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -39,10 +41,17 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [sortDesc, setSortDesc] = useState(true);
 
-  const [speakSummaries, setSpeakSummaries] = useState(false);
-  
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  const speakSummaries = settings.speakSummaries;
+
   const toMs = (v: number | string) =>
     typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
+
+  // on mount, load from localStorage
+  useEffect(() => {
+    setSettings(loadSettings());
+  }, []);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -298,12 +307,12 @@ export default function App() {
           </div>
           <div className="pt-3">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={speakSummaries}
-                onChange={(e) => setSpeakSummaries(e.target.checked)}
-              />
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={settings.speakSummaries}
+              onChange={(e) => setSettings(saveSettings({ speakSummaries: e.target.checked }))}
+            />
               Speak summaries
             </label>
           </div>
