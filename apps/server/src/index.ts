@@ -161,6 +161,28 @@ app.post('/chats/:id/generate-title', async (c) => {
     if (!SUPPORTED_MODEL_IDS.has(chat.modelId)) {
       return c.json({ error: 'Unsupported model for this chat' }, 400);
     }
+
+    function firstSentenceOf(text: string): string {
+      const m = text.trim().match(/^(.+?[.!?])( |\n|$)/s);
+      return (m?.[1] ?? text.trim()).replace(/\s+/g, ' ').trim();
+    }
+    
+    function isDecentSummary(s: string): boolean {
+      const len = s.length;
+      const words = s.split(/\s+/).filter(Boolean).length;
+      // widen bounds: allow detailed first sentences
+      if (words < 3 || words > 60) return false;
+      if (len < 15 || len > 300) return false;
+      if (s.includes('```') || s.includes('http')) return false;      // still avoid code/urls
+      if (/[{};]/.test(s)) return false;                               // code-ish
+      if (!/^[A-Z]/.test(s)) return false;
+      return true;
+    }
+
+    function stripMarkdownInline(s: string): string {
+      return s.replace(/\*\*/g, '').replace(/[_`]/g, '');
+    }
+
     const messageId = randomUUID();
     const now = new Date();
 
@@ -194,14 +216,11 @@ app.post('/chats/:id/generate-title', async (c) => {
 
     let summary: string | undefined;
     
-    const sentenceCount = assistantText.split(/[.!?]/).filter(Boolean).length;
-    const minSentences = Number(process.env.SUMMARY_MIN_SENTENCES ?? 1);
-    const longByChars = assistantText.length > 400;
-
-    if (sentenceCount > minSentences || longByChars) {
-      try {
-        summary = await summarizeText(assistantText, undefined, { reqId: c.get('reqId') });
-      } catch {}
+    const candidate = firstSentenceOf(assistantText);
+    if (isDecentSummary(candidate)) {
+      summary = candidate.endsWith('.') ? candidate : `${candidate}.`;
+    } else {
+      summary = await summarizeText(assistantText, undefined, { reqId: c.get('reqId') });
     }
 
     await db.insert(messages).values({ 
