@@ -1,0 +1,5 @@
+- Streaming responses
+- Markdown rendering for messages
+- Persist “Speak summaries” in localStorage
+- Chat rename/delete confirmation polish (keyboard focus trap)
+- Basic unit tests (server routes) and REST Client tests for delete/summarize

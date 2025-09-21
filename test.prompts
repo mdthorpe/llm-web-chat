@@ -1,0 +1,29 @@
+Here are focused prompts to exercise different summary paths:
+
+- First-sentence is great (should reuse it)
+  - "Explain the difference between Type 1 and Type 2 diabetes in two paragraphs."
+
+- Long, multi-sentence (should summarize)
+  - "Write three paragraphs about the history, diet, and habitat of pandas."
+
+- Dense first sentence (should accept as summary)
+  - "Provide a concise overview of Kubernetes architecture, including control plane components and node agents, in two paragraphs."
+
+- Markdown-heavy (heuristic strips markdown before speaking)
+  - "Give an overview of HTTP/2 vs HTTP/3 with headings and bold terms."
+
+- Contains code (heuristic should reject first sentence if it looks code-ish)
+  - "Show me a React component that fetches data and explain it in two paragraphs."
+
+- Contains a URL (heuristic should reject first sentence if it includes links)
+  - "Summarize the key points from https://aws.amazon.com/bedrock/ in two paragraphs."
+
+- Short reply (should still summarize with min-sentences=1)
+  - "Define idempotency in one sentence."
+
+- Medical (like your example)
+  - "What suture materials are most commonly used for internal and external closures? Please answer in two paragraphs."
+
+Try these and watch:
+- Summary appears above the assistant message.
+- With your current settings, long/dense answers should reuse the first sentence; otherwise the LLM summary kicks in.
