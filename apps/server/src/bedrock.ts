@@ -88,7 +88,7 @@ export async function summarizeText(
     {
       role: 'system',
       content:
-      "Return EXACTLY ONE friendly sentence (<= 12 words) that introduces the reply, like 'Here is some information about <topic>.' No quotes, no lists, no markdown, no extra text. End with a period.",
+      "Return EXACTLY ONE conversational andfriendly sentence (<= 12 words) that introduces the reply, like 'Here is some information about <topic>.' No quotes, no lists, no markdown, no extra text. End with a period. Do not prefix the summary with phrases like 'Here is a summary of' or 'Here is a brief overview of'.",
     },
     { role: 'user', content: text.slice(0, 40) }
   ];

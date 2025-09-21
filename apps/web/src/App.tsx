@@ -356,8 +356,8 @@ export default function App() {
               {messages.map((m) => (
                 <div key={m.id} className="flex">
                   {m.role !== 'user' && m.summary && (
-                    <div className="mb-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
-                      <span className="font-medium">Summary:</span> <span className="italic">{m.summary}</span>
+                     <div className="mb-1 mr-2 inline-block rounded-lg bg-gray-800 text-gray-50 px-3 py-1.5 text-base shadow-sm min-w-[30ch] max-w-[30ch] whitespace-normal break-words">
+                      {m.summary}
                     </div>
                   )}
                   <Card
