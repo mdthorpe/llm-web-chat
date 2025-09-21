@@ -13,6 +13,7 @@ type Chat = {
   createdAt: number | string;
   updatedAt: number | string;
 };
+
 type Message = {
   id: string;
   chatId: string;
@@ -37,6 +38,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sortDesc, setSortDesc] = useState(true);
+
+  const [speakSummaries, setSpeakSummaries] = useState(false);
   
   const toMs = (v: number | string) =>
     typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
@@ -101,8 +104,11 @@ export default function App() {
       const assistantSummary: string | undefined = json?.summary;
       const responseId: string | undefined = json?.responseId;
 
-      if (assistantSummary && responseId) {
-        setSummariesById((prev) => ({ ...prev, [responseId]: assistantSummary }));
+      console.debug('json:', json);
+      console.debug('assistantSummary:', json?.summary);
+      console.debug('speakSummaries:', speakSummaries);
+
+      if (assistantSummary && speakSummaries) {
         void playTts(assistantSummary);
       }
 
@@ -261,6 +267,17 @@ export default function App() {
               </Button>
             ))}
           </div>
+          <div className="pt-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={speakSummaries}
+                onChange={(e) => setSpeakSummaries(e.target.checked)}
+              />
+              Speak summaries
+            </label>
+          </div>
         </div>
       </aside>
 
@@ -274,6 +291,14 @@ export default function App() {
               placeholder="Type your first message to start the conversation…"
               value={startMessage}
               onChange={(e) => setStartMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (newChatModelId && startMessage.trim() && !loading) {
+                    void handleStartChat();
+                  }
+                }
+              }}
             />
             <div className="space-y-1">
               <label className="text-sm font-medium">Model</label>
@@ -301,9 +326,11 @@ export default function App() {
             <div className="flex-1 overflow-auto space-y-3">
               {messages.map((m) => (
                 <div key={m.id} className="flex">
-                  {m.role !== 'user' && (m as any).summary && (
-                    <div className="mb-1 text-sm text-gray-600">{m.summary}</div>
-                  )}  
+                  {m.role !== 'user' && m.summary && (
+                    <div className="mb-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
+                      <span className="font-medium">Summary:</span> <span className="italic">{m.summary}</span>
+                    </div>
+                  )}
                   <Card
                     className={`px-3 py-2 max-w-[80%] whitespace-pre-wrap ${
                       m.role === 'user'

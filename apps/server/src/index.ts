@@ -193,8 +193,12 @@ app.post('/chats/:id/generate-title', async (c) => {
     const responseTime = new Date();
 
     let summary: string | undefined;
+    
     const sentenceCount = assistantText.split(/[.!?]/).filter(Boolean).length;
-    if (sentenceCount > 3) {
+    const minSentences = Number(process.env.SUMMARY_MIN_SENTENCES ?? 1);
+    const longByChars = assistantText.length > 400;
+
+    if (sentenceCount > minSentences || longByChars) {
       try {
         summary = await summarizeText(assistantText, undefined, { reqId: c.get('reqId') });
       } catch {}
