@@ -55,6 +55,17 @@ export default function App() {
     setSettings(loadSettings());
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    // remove previous
+    Array.from(root.classList)
+      .filter(c => c.startsWith('theme-'))
+      .forEach(c => root.classList.remove(c));
+    if (settings.colorScheme && settings.colorScheme !== 'default') {
+      root.classList.add(`theme-${settings.colorScheme}`);
+    }
+  }, [settings.colorScheme]);
+
     // Apply theme to <html> using the .dark class
   useEffect(() => {
     const root = document.documentElement;
@@ -268,10 +279,10 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen grid grid-cols-1 md:grid-cols-[320px_1fr] ">
+    <div className="min-h-screen grid grid-cols-1 md:grid-cols-[320px_1fr] bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="border-r p-4 space-y-6">
-        <h1 className="text-xl font-semibold">LLM Web Chat</h1>
+      <aside className="border-r border-border p-4 space-y-6">
+        <h1 className="text-xl font-semibold text-primary">LLM Web Chat</h1>
 
         <Button
           variant="outline"
@@ -296,8 +307,8 @@ export default function App() {
               {sortDesc ? 'Newest' : 'Oldest'}
             </Button>
           </div>
-          <div className="h-[40vh] overflow-auto divide-y rounded-md border">
-            {chats.length === 0 && <div className="p-3 text-sm text-gray-500">No chats yet</div>}
+          <div className="h-[40vh] overflow-auto divide-y divide-border rounded-md border border-border">
+            {chats.length === 0 && <div className="p-3 text-sm text-muted-foreground">No chats yet</div>}
             {sortedChats.map((c) => (
               <div key={c.id} className="relative">
                 <Button
@@ -306,12 +317,12 @@ export default function App() {
                   onClick={() => setSelectedChatId(c.id)}
                 >
                   <div className="font-medium">{c.name}</div>
-                  <div className="text-xs text-gray-500">{c.modelId}</div>
+                  <div className="text-xs text-muted-foreground">{c.modelId}</div>
                 </Button>
                 <button
                   aria-label="Delete chat"
                   title="Delete chat"
-                  className="absolute right-2 top-2 text-gray-400 opacity-50 transition-opacity transition-colors
+                  className="absolute right-2 top-2 text-muted-foreground opacity-50 transition-opacity transition-colors
                             group-hover:opacity-100 hover:text-red-600 focus-visible:opacity-100
                             hover:ring-1 hover:ring-red-200 hover:bg-red-50 rounded"
                   onClick={(e) => {
@@ -361,6 +372,25 @@ export default function App() {
               </SelectContent>
             </Select>
           </div>
+          <div className="pt-3">
+            <label className="text-sm font-medium block mb-1">Color scheme</label>
+            <Select
+              value={settings.colorScheme}
+              onValueChange={(v) =>
+                setSettings(saveSettings({ colorScheme: v as 'default' | 'sky' | 'emerald' | 'rose' }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Color scheme" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default</SelectItem>
+                <SelectItem value="sky">Sky</SelectItem>
+                <SelectItem value="emerald">Emerald</SelectItem>
+                <SelectItem value="rose">Rose</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="pt-3 flex items-center justify-between">
             <span className="text-sm">Speak summaries</span>
             <Switch
@@ -405,15 +435,15 @@ export default function App() {
               {messages.map((m) => (
                 <div key={m.id} className="flex">
                   {m.role !== 'user' && m.summary && (
-                     <div className="mb-1 mr-2 inline-block rounded-lg bg-gray-800 text-gray-50 px-3 py-1.5 text-base shadow-sm min-w-[30ch] max-w-[30ch] whitespace-normal break-words">
+                    <div className="mb-1 mr-2 inline-block rounded-lg bg-secondary text-secondary-foreground px-3 py-2 shadow-sm min-w-[30ch] max-w-[30ch] whitespace-normal break-words">
                       {m.summary}
                     </div>
                   )}
                   <Card
-                    className={`px-3 py-2 max-w-[80%] whitespace-pre-wrap ${
+                    className={`px-4 py-2 max-w-[80%] whitespace-pre-wrap ${
                       m.role === 'user'
-                        ? 'bg-blue-600 text-white ml-auto border-blue-600'
-                        : 'bg-gray-100'
+                        ? 'bg-primary text-primary-foreground ml-auto border border-primary'
+                        : 'bg-secondary text-secondary-foreground'
                     }`}
                   >
                     {m.content}
