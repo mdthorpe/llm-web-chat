@@ -342,7 +342,7 @@ export default function App() {
                 value={newChatModelId}
                 onValueChange={(v) => setNewChatModelId(v)}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full bg-secondary text-secondary-foreground border-border focus:ring-ring">
                   <SelectValue placeholder="Select a model…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -362,7 +362,7 @@ export default function App() {
                 setSettings(saveSettings({ theme: v as 'light' | 'dark' | 'system' }))
               }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full bg-secondary text-secondary-foreground border-border focus:ring-ring">
                 <SelectValue placeholder="Theme" />
               </SelectTrigger>
               <SelectContent>
@@ -380,7 +380,7 @@ export default function App() {
                 setSettings(saveSettings({ colorScheme: v as 'default' | 'sky' | 'emerald' | 'rose' }))
               }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full bg-secondary text-secondary-foreground border-border focus:ring-ring">
                 <SelectValue placeholder="Color scheme" />
               </SelectTrigger>
               <SelectContent>
