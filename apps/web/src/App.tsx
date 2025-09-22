@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { loadSettings, saveSettings, DEFAULT_SETTINGS, type AppSettings } from '@/lib/settings';
-
+import { startStt } from '@/lib/audio/stt';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -46,6 +46,8 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   const speakSummaries = settings.speakSummaries;
+
+  const [sttStop, setSttStop] = useState<null | (() => void)>(null);
 
   const toMs = (v: number | string) =>
     typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
@@ -109,6 +111,28 @@ export default function App() {
     );
     return copy;
   }, [chats, sortDesc]);
+
+  async function handleStartDictation() {
+    if (sttStop) return; // already running
+    const stop = await startStt('ws://localhost:3001/ws/stt', {
+      onPartial: (t) => setMessageText(t),
+      onFinal: (t) => {
+        setMessageText(t);
+        setSttStop(null);
+        stop();
+        // Auto-submit after receiving final transcript
+        if (t.trim()) {
+          void doSendMessage();
+        }
+      },
+    });
+    setSttStop(() => stop);
+  }
+  
+  function handleStopDictation() {
+    sttStop?.();
+    setSttStop(null);
+  }
 
   async function doSendMessage() {
     if (!selectedChatId || !messageText.trim()) return;
@@ -192,11 +216,20 @@ export default function App() {
     }
   }
 
-  async function handleStartChat() {
-    const text = startMessage.trim();
-    if (!text || !newChatModelId) return;
+  async function handleStartChat(textOverride?: string) {
+    const text = (textOverride || startMessage).trim();
+    console.log('handleStartChat called with:', { text, textOverride, startMessage, newChatModelId, loading });
+    if (!text || !newChatModelId) {
+      console.log('Aborting: missing text or model');
+      return;
+    }
+    if (loading) {
+      console.log('Aborting: already loading');
+      return;
+    }
     setLoading(true);
     try {
+      console.log('Creating chat...');
       const createRes = await fetch(`${API_BASE}/chats`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -204,9 +237,11 @@ export default function App() {
       });
       if (!createRes.ok) throw new Error('Create chat failed');
       const chat: Chat = await createRes.json();
+      console.log('Chat created:', chat.id);
       setChats((prev) => [chat, ...prev]);
       setSelectedChatId(chat.id);
 
+      console.log('Sending first message...');
       const sendRes = await fetch(`${API_BASE}/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -227,8 +262,9 @@ export default function App() {
       }
 
       setStartMessage('');
+      console.log('Chat started successfully');
     } catch (err) {
-      console.error(err);
+      console.error('handleStartChat error:', err);
       alert('Failed to start chat');
     } finally {
       setLoading(false);
@@ -423,8 +459,40 @@ export default function App() {
                 }
               }}
             />
+            <div className="flex gap-2">
+              <Button 
+                type="button"
+                variant={sttStop ? "destructive" : "secondary"}
+                onClick={async () => {
+                  if (sttStop) {
+                    handleStopDictation();
+                  } else {
+                    const stop = await startStt('ws://localhost:3001/ws/stt', {
+                      onPartial: (t) => setStartMessage(t),
+                      onFinal: (t) => {
+                        console.log('Final transcript received:', t, 'Model:', newChatModelId);
+                        setStartMessage(t);
+                        setSttStop(null);
+                        stop();
+                        // Auto-submit after receiving final transcript
+                        if (t.trim() && newChatModelId) {
+                          console.log('Auto-submitting chat...');
+                          void handleStartChat(t); // Pass the transcript directly
+                        } else {
+                          console.log('Not auto-submitting:', { hasText: !!t.trim(), hasModel: !!newChatModelId });
+                        }
+                      },
+                    });
+                    setSttStop(() => stop);
+                  }
+                }} 
+                disabled={loading}
+              >
+                {sttStop ? '⏹ Stop dictation' : '🎤 Start dictation'}
+              </Button>
+            </div>
             <div className="flex justify-end">
-              <Button onClick={handleStartChat} disabled={!startMessage.trim() || !newChatModelId || loading}>
+              <Button onClick={() => handleStartChat()} disabled={!startMessage.trim() || !newChatModelId || loading}>
                 Start chat
               </Button>
             </div>
@@ -474,12 +542,23 @@ export default function App() {
                 disabled={!selectedChatId || sending}
                 rows={2}
               />
-              <Button
-                type="submit"
-                disabled={!selectedChatId || !messageText.trim() || sending}
-              >
-                {sending ? 'Sending…' : 'Send'}
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="submit"
+                  disabled={!selectedChatId || !messageText.trim() || sending}
+                >
+                  {sending ? 'Sending…' : 'Send'}
+                </Button>
+                <Button
+                  type="button"
+                  variant={sttStop ? "destructive" : "secondary"}
+                  size="sm"
+                  onClick={sttStop ? handleStopDictation : handleStartDictation}
+                  disabled={!selectedChatId || sending}
+                >
+                  {sttStop ? '⏹ Stop' : '🎤 Dictate'}
+                </Button>
+              </div>
             </form>
           </>
         )}

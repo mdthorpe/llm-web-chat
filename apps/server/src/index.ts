@@ -10,9 +10,14 @@
   import { summarizeText } from './bedrock';
   import { MODEL_CATALOG, SUPPORTED_MODEL_IDS } from './config/models';
   import { synthesizeToMp3 } from './tts';
+  import { TranscribeStreamingClient, StartStreamTranscriptionCommand } from '@aws-sdk/client-transcribe-streaming';
+  import type { ServerWebSocket } from 'bun';
 
   type AppBindings = { Variables: { reqId: string } };
-
+  
+  const transcribe = new TranscribeStreamingClient({ region: process.env.AWS_REGION });
+  type Ws = ServerWebSocket<any>;
+  
   const app = new Hono<AppBindings>();
   app.use('*', cors());
 
@@ -40,6 +45,8 @@
 
   // Health check
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // (intentionally no Hono route for /ws/stt) — handled by Bun.serve upgrade below
 
   app.get('/config', (c) => {
     return c.json({ defaultModelId: process.env.DEFAULT_MODEL_ID ?? null });
@@ -277,14 +284,87 @@ app.post('/chats/:id/generate-title', async (c) => {
     });
   });
   
-  export default app;
-
   // Start the server
   const port = Number(process.env.PORT ?? 3000);
 
+  function wsToAudioStream(ws: Ws) {
+    const queue: Uint8Array[] = [];
+    let done = false;
+    return {
+      async *[Symbol.asyncIterator]() {
+        while (!done || queue.length) {
+          const chunk = queue.shift();
+          if (chunk) yield { AudioEvent: { AudioChunk: chunk } };
+          else await new Promise(r => setTimeout(r, 10));
+        }
+      },
+      push(b: Uint8Array) { queue.push(b); },
+      end() { done = true; }
+    };
+  }
+  
   export const server = Bun.serve({
     port,
-    fetch: app.fetch,
+    websocket: {
+      async open(ws: Ws) {
+        const audio = wsToAudioStream(ws);
+        // stash on ws for use in message/close
+        // @ts-expect-error
+        ws.audio = audio;
+  
+        // Send a ready event so clients can verify the connection upgraded
+        try { ws.send(JSON.stringify({ type: 'ready' })); } catch {}
+
+        try {
+          const cmd = new StartStreamTranscriptionCommand({
+            LanguageCode: 'en-US',
+            MediaEncoding: 'pcm',
+            MediaSampleRateHertz: 16000,
+            AudioStream: audio as any,
+            EnablePartialResultsStabilization: true,
+            PartialResultsStability: 'medium',
+          });
+          const res = await transcribe.send(cmd);
+          for await (const evt of res.TranscriptResultStream!) {
+            const results = (evt as any).TranscriptEvent?.Transcript?.Results || [];
+            for (const r of results) {
+              const text = (r.Alternatives?.[0]?.Transcript || '').trim();
+              if (text) {
+                ws.send(JSON.stringify({ type: r.IsPartial ? 'partial' : 'final', text }));
+              }
+            }
+          }
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'error', error: String(e) }));
+        } finally {
+          ws.close();
+        }
+      },
+      message(ws: Ws, data) {
+        // binary PCM chunks (Int16 at 16kHz)
+        if (data instanceof Uint8Array) {
+          // @ts-expect-error
+          ws.audio?.push(data);
+        } else if (typeof data === 'string' && data === 'END') {
+          // @ts-expect-error
+          ws.audio?.end();
+        } else if (typeof data === 'string' && data === 'PING') {
+          try { ws.send(JSON.stringify({ type: 'pong' })); } catch {}
+        }
+      },
+      close(ws: Ws) {
+        // @ts-expect-error
+        ws.audio?.end();
+      },
+    },
+    fetch(req, srv) {
+      const { pathname } = new URL(req.url);
+      if (pathname === '/ws/stt') {
+        if (srv.upgrade(req)) return;
+        return new Response('Expected WebSocket upgrade', { status: 426 });
+      }
+      return app.fetch(req);
+    },
   });
 
   console.log(`Server listening on http://localhost:${port}`)
