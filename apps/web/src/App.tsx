@@ -324,6 +324,25 @@ export default function App() {
               </div>
             ))}
           </div>
+          <div className="pt-2">Settings</div>
+          <div className="pt-3">
+              <label className="text-sm font-medium">Chat Model</label>
+              <Select
+                value={newChatModelId}
+                onValueChange={(v) => setNewChatModelId(v)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a model…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           <div className="pt-3">
             <label className="text-sm font-medium block mb-1">Theme</label>
             <Select
@@ -374,25 +393,6 @@ export default function App() {
                 }
               }}
             />
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Model</label>
-              <label className="text-sm font-medium">Model</label>
-              <Select
-                value={newChatModelId}
-                onValueChange={(v) => setNewChatModelId(v)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a model…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="flex justify-end">
               <Button onClick={handleStartChat} disabled={!startMessage.trim() || !newChatModelId || loading}>
                 Start chat
