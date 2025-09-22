@@ -165,12 +165,18 @@ export default function App() {
       const assistantSummary: string | undefined = json?.summary;
       const responseId: string | undefined = json?.responseId;
 
-      console.debug('json:', json);
-      console.debug('assistantSummary:', json?.summary);
-      console.debug('speakSummaries:', speakSummaries);
+      console.log('Message response:', {
+        summary: assistantSummary,
+        speakSummaries,
+        settingsSpeakSummaries: settings.speakSummaries,
+        willSpeak: !!(assistantSummary && speakSummaries)
+      });
 
       if (assistantSummary && speakSummaries) {
-        void playTts(assistantSummary);
+        console.log('Playing TTS for summary:', assistantSummary);
+        // Strip markdown for better TTS
+        const cleanSummary = assistantSummary.replace(/\*\*/g, '').replace(/[_`]/g, '');
+        void playTts(cleanSummary);
       }
 
       const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
