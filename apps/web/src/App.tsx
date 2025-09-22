@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
@@ -48,6 +48,8 @@ export default function App() {
   const speakSummaries = settings.speakSummaries;
 
   const [sttStop, setSttStop] = useState<null | (() => void)>(null);
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toMs = (v: number | string) =>
     typeof v === 'number' ? v : (Number.isFinite(Number(v)) ? Number(v) : new Date(v).getTime() || 0);
@@ -99,6 +101,11 @@ export default function App() {
     loadMessages();
   }, [selectedChatId]);
 
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   const selectedChat = useMemo(
     () => chats.find((c) => c.id === selectedChatId) ?? null,
     [chats, selectedChatId]
@@ -114,19 +121,24 @@ export default function App() {
 
   async function handleStartDictation() {
     if (sttStop) return; // already running
-    const stop = await startStt('ws://localhost:3001/ws/stt', {
-      onPartial: (t) => setMessageText(t),
-      onFinal: (t) => {
-        setMessageText(t);
-        setSttStop(null);
-        stop();
-        // Auto-submit after receiving final transcript
-        if (t.trim()) {
-          void doSendMessage();
-        }
-      },
-    });
-    setSttStop(() => stop);
+    try {
+      const stop = await startStt('ws://localhost:3001/ws/stt', {
+        onPartial: (t) => setMessageText(t),
+        onFinal: (t) => {
+          setMessageText(t);
+          setSttStop(null);
+          stop();
+          // Auto-submit after receiving final transcript
+          if (t.trim()) {
+            void doSendMessage(t); // Pass the transcript directly
+          }
+        },
+      });
+      setSttStop(() => stop);
+    } catch (err) {
+      console.error('Failed to start dictation:', err);
+      setSttStop(null);
+    }
   }
   
   function handleStopDictation() {
@@ -134,10 +146,10 @@ export default function App() {
     setSttStop(null);
   }
 
-  async function doSendMessage() {
-    if (!selectedChatId || !messageText.trim()) return;
+  async function doSendMessage(textOverride?: string) {
+    const text = (textOverride || messageText).trim();
+    if (!selectedChatId || !text) return;
 
-    const text = messageText.trim();
     setMessageText('');
     setSending(true);
 
@@ -165,15 +177,7 @@ export default function App() {
       const assistantSummary: string | undefined = json?.summary;
       const responseId: string | undefined = json?.responseId;
 
-      console.log('Message response:', {
-        summary: assistantSummary,
-        speakSummaries,
-        settingsSpeakSummaries: settings.speakSummaries,
-        willSpeak: !!(assistantSummary && speakSummaries)
-      });
-
       if (assistantSummary && speakSummaries) {
-        console.log('Playing TTS for summary:', assistantSummary);
         // Strip markdown for better TTS
         const cleanSummary = assistantSummary.replace(/\*\*/g, '').replace(/[_`]/g, '');
         void playTts(cleanSummary);
@@ -224,18 +228,10 @@ export default function App() {
 
   async function handleStartChat(textOverride?: string) {
     const text = (textOverride || startMessage).trim();
-    console.log('handleStartChat called with:', { text, textOverride, startMessage, newChatModelId, loading });
-    if (!text || !newChatModelId) {
-      console.log('Aborting: missing text or model');
-      return;
-    }
-    if (loading) {
-      console.log('Aborting: already loading');
-      return;
-    }
+    if (!text || !newChatModelId) return;
+    if (loading) return;
     setLoading(true);
     try {
-      console.log('Creating chat...');
       const createRes = await fetch(`${API_BASE}/chats`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -243,17 +239,25 @@ export default function App() {
       });
       if (!createRes.ok) throw new Error('Create chat failed');
       const chat: Chat = await createRes.json();
-      console.log('Chat created:', chat.id);
       setChats((prev) => [chat, ...prev]);
       setSelectedChatId(chat.id);
 
-      console.log('Sending first message...');
       const sendRes = await fetch(`${API_BASE}/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ chatId: chat.id, content: text }),
       });
       if (!sendRes.ok) throw new Error('Send message failed');
+      
+      // Handle the response to get summary and potentially play TTS
+      const json = await sendRes.json();
+      const assistantSummary: string | undefined = json?.summary;
+      
+      if (assistantSummary && speakSummaries) {
+        // Strip markdown for better TTS
+        const cleanSummary = assistantSummary.replace(/\*\*/g, '').replace(/[_`]/g, '');
+        void playTts(cleanSummary);
+      }
 
       const msgsRes = await fetch(`${API_BASE}/chats/${chat.id}/messages`);
       setMessages(await msgsRes.json());
@@ -268,9 +272,8 @@ export default function App() {
       }
 
       setStartMessage('');
-      console.log('Chat started successfully');
     } catch (err) {
-      console.error('handleStartChat error:', err);
+      console.error(err);
       alert('Failed to start chat');
     } finally {
       setLoading(false);
@@ -476,16 +479,12 @@ export default function App() {
                     const stop = await startStt('ws://localhost:3001/ws/stt', {
                       onPartial: (t) => setStartMessage(t),
                       onFinal: (t) => {
-                        console.log('Final transcript received:', t, 'Model:', newChatModelId);
                         setStartMessage(t);
                         setSttStop(null);
                         stop();
                         // Auto-submit after receiving final transcript
                         if (t.trim() && newChatModelId) {
-                          console.log('Auto-submitting chat...');
                           void handleStartChat(t); // Pass the transcript directly
-                        } else {
-                          console.log('Not auto-submitting:', { hasText: !!t.trim(), hasModel: !!newChatModelId });
                         }
                       },
                     });
@@ -531,6 +530,7 @@ export default function App() {
               )}
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
 
             <form className="mt-4 flex gap-2" onSubmit={handleSendMessage}>
