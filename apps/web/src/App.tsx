@@ -189,7 +189,7 @@ export default function App() {
       attempts++;
 
       // If still connecting after 5 seconds, something is wrong
-      if (attempts > 50) {
+      if (attempts > maxAttempts) {
         console.error("WebSocket connection timeout after 5 seconds");
         ws.close();
         alert("WebSocket connection timeout");
