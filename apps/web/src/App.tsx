@@ -128,10 +128,6 @@ export default function App() {
     try {
       const ws = new WebSocket("ws://localhost:3001/ws/chat");
 
-      ws.onopen = () => {
-        console.log("✅ Streaming WebSocket connected successfully");
-      };
-
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
