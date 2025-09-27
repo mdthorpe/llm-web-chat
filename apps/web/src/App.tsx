@@ -48,7 +48,10 @@ export default function App() {
   const speakSummaries = settings.speakSummaries;
 
   const [sttStop, setSttStop] = useState<null | (() => void)>(null);
-  
+  const streamingWsRef = useRef<WebSocket | null>(null);
+  const streamingMessageIdRef = useRef<string | null>(null);
+  const isStreamingRef = useRef(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toMs = (v: number | string) =>
@@ -119,6 +122,97 @@ export default function App() {
     return copy;
   }, [chats, sortDesc]);
 
+  function connectStreamingWebSocket() {
+    console.log("Attempting to connect to:", "ws://localhost:3001/ws/chat");
+
+    try {
+      const ws = new WebSocket("ws://localhost:3001/ws/chat");
+
+      ws.onopen = () => {
+        console.log("✅ Streaming WebSocket connected successfully");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleStreamingMessage(data);
+        } catch (error) {
+          console.error("Failed to parse streaming message:", error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("❌ Streaming WebSocket error:", error);
+        console.error("WebSocket readyState when error occurred:", ws.readyState);
+        isStreamingRef.current = false
+        streamingWsRef.current = null
+      };
+
+      ws.onclose = (event) => {
+        console.log("🔌 Streaming WebSocket closed. Code:", event.code, "Reason:", event.reason);
+        isStreamingRef.current = false
+        streamingWsRef.current = null
+      };
+
+      // Add connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.error("WebSocket connection timeout after 10 seconds");
+          ws.close();
+        }
+      }, 10000);
+
+      ws.onopen = () => {
+        clearTimeout(connectionTimeout);
+        console.log("✅ Streaming WebSocket connected successfully");
+      };
+
+      streamingWsRef.current = ws
+      return ws;
+
+    } catch (error) {
+      console.error("❌ Failed to create WebSocket:", error);
+      return null;
+    }
+  }
+
+  // Add this new function after connectStreamingWebSocket()
+  async function connectAndWaitForWebSocket() {
+    console.log("Connecting WebSocket...");
+    const ws = connectStreamingWebSocket();
+    if (!ws) {
+      alert("Failed to create WebSocket connection. Please check if the server is running.");
+      return null;
+    }
+
+    // Wait for connection with improved timeout logic
+    let attempts = 0;
+    const maxAttempts = 50;
+    while (attempts < maxAttempts && ws.readyState === WebSocket.CONNECTING) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+
+      // If still connecting after 5 seconds, something is wrong
+      if (attempts > 50) {
+        console.error("WebSocket connection timeout after 5 seconds");
+        ws.close();
+        alert("WebSocket connection timeout");
+        return null;
+      }
+    }
+    console.log(`WebSocket state after ${attempts * 100}ms:`, ws.readyState);
+
+    // Only update state after confirming connection is working
+    if (ws.readyState === WebSocket.OPEN) {
+      streamingWsRef.current = ws
+      return ws;
+    } else {
+      console.error("WebSocket failed to open properly");
+      alert("WebSocket failed to open");
+      return null;
+    }
+  }
+  
   async function handleStartDictation() {
     if (sttStop) return; // already running
     try {
@@ -150,55 +244,33 @@ export default function App() {
     const text = (textOverride || messageText).trim();
     if (!selectedChatId || !text) return;
 
-    setMessageText('');
+    // Connect WebSocket if not already connected or connecting
+    const ws = await connectAndWaitForWebSocket();
+    if (!ws) return;
+  
+    setMessageText("");
     setSending(true);
-
+  
     const tempUser: Message = {
       id: `temp-user-${Date.now()}`,
       chatId: selectedChatId,
-      role: 'user',
+      role: "user",
       content: text,
       createdAt: Date.now(),
     };
     setMessages((prev) => [...prev, tempUser]);
-
+  
     try {
-      const res = await fetch(`${API_BASE}/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chatId: selectedChatId, content: text }),
-      });
-      if (!res.ok) {
-        const detail = await safeJson(res);
-        throw new Error(`Send failed: ${res.status} ${JSON.stringify(detail)}`);
-      }
-      const json = await res.json();
-      const assistantText: string | undefined = json?.text;
-      const assistantSummary: string | undefined = json?.summary;
-      const responseId: string | undefined = json?.responseId;
-
-      if (assistantSummary && speakSummaries) {
-        // Strip markdown for better TTS
-        const cleanSummary = assistantSummary.replace(/\*\*/g, '').replace(/[_`]/g, '');
-        void playTts(cleanSummary);
-      }
-
-      const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
-      const msgsJson = await msgsRes.json();
-      setMessages(msgsJson);
-
-      if (!assistantText) {
-        console.warn('No assistant text returned');
-      }
+      // Send streaming chat request
+      ws.send(JSON.stringify({
+        type: "chat",
+        chatId: selectedChatId,
+        content: text
+      }));
+  
     } catch (err) {
-      console.error(err);
-      alert('Failed to send message');
-      try {
-        const msgsRes = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
-        const msgsJson = await msgsRes.json();
-        setMessages(msgsJson);
-      } catch {}
-    } finally {
+      console.error("Failed to send streaming message:", err);
+      alert("Failed to send message");
       setSending(false);
     }
   }
@@ -231,55 +303,41 @@ export default function App() {
     if (!text || !newChatModelId) return;
     if (loading) return;
     setLoading(true);
+    
     try {
+      // Create chat via HTTP (same as before)
       const createRes = await fetch(`${API_BASE}/chats`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'New Chat', modelId: newChatModelId }),
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "New Chat", modelId: newChatModelId }),
       });
-      if (!createRes.ok) throw new Error('Create chat failed');
+      if (!createRes.ok) throw new Error("Create chat failed");
       const chat: Chat = await createRes.json();
       setChats((prev) => [chat, ...prev]);
       setSelectedChatId(chat.id);
-
-      const sendRes = await fetch(`${API_BASE}/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chatId: chat.id, content: text }),
-      });
-      if (!sendRes.ok) throw new Error('Send message failed');
-      
-      // Handle the response to get summary and potentially play TTS
-      const json = await sendRes.json();
-      const assistantSummary: string | undefined = json?.summary;
-      
-      if (assistantSummary && speakSummaries) {
-        // Strip markdown for better TTS
-        const cleanSummary = assistantSummary.replace(/\*\*/g, '').replace(/[_`]/g, '');
-        void playTts(cleanSummary);
+  
+      const ws = await connectAndWaitForWebSocket();  
+      if (!ws) {
+        throw new Error("Failed to create WebSocket connection");
       }
 
-      const msgsRes = await fetch(`${API_BASE}/chats/${chat.id}/messages`);
-      setMessages(await msgsRes.json());
-
-      // Try to auto-generate a title (endpoint may not exist yet)
-      const titleRes = await fetch(`${API_BASE}/chats/${chat.id}/generate-title`, { method: 'POST' });
-      if (titleRes.ok) {
-        const { title } = await titleRes.json();
-        if (title) {
-          setChats((prev) => prev.map((c) => (c.id === chat.id ? { ...c, name: title, updatedAt: Date.now() } : c)));
-        }
-      }
-
-      setStartMessage('');
+      // NEW: Send message via WebSocket
+      ws.send(JSON.stringify({
+        type: "chat",
+        chatId: chat.id,
+        content: text
+      }));
+  
+      // handleStreamingMessage handles the response
+      setStartMessage("");
     } catch (err) {
       console.error(err);
-      alert('Failed to start chat');
+      alert("Failed to start chat");
     } finally {
       setLoading(false);
     }
   }
-
+  
   async function handleDeleteChat(id: string) {
     const ok = window.confirm('Delete this chat? This cannot be undone.');
     if (!ok) return;
@@ -294,6 +352,88 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert('Failed to delete chat');
+    }
+  }
+
+  function handleStreamingMessage(data: any) {
+    switch (data.type) {
+      case 'ready':
+        console.log('WebSocket ready - connection established');
+        break;
+
+      case 'start':
+        console.log('Streaming started:', data.messageId);
+        setStreamingMessageId(data.messageId);
+        setIsStreaming(true);
+        setSending(false);                        // allow input again
+        setMessages(prev => [
+          ...prev,
+          {
+            id: data.messageId,
+            chatId: selectedChatId ?? '',
+            role: 'assistant',
+            content: '',
+            createdAt: Date.now()
+          }
+        ]);
+        break;
+
+    case 'chunk':
+      if (!data.messageId || typeof data.text !== 'string') break;
+      setMessages(prev => {
+        const next = prev.some(msg => msg.id === data.messageId)
+          ? prev.map(msg =>
+              msg.id === data.messageId ? { ...msg, content: msg.content + data.text } : msg
+            )
+          : [
+              ...prev,
+              {
+                id: data.messageId,
+                chatId: selectedChatId ?? '',
+                role: 'assistant',
+                content: data.text,
+                createdAt: Date.now()
+              }
+            ];
+        return next;
+      });
+      break;
+
+    case 'complete':
+      console.log('Streaming completed:', data.messageId);
+      setIsStreaming(false);
+      setStreamingMessageId(null);
+      if (data.summary) {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === data.messageId ? { ...msg, summary: data.summary } : msg
+          )
+        );
+        if (speakSummaries) {
+          const cleanSummary = data.summary.replace(/\*\*/g, '').replace(/[_`]/g, '');
+          void playTts(cleanSummary);
+        }
+      }
+      void loadMessages();
+      break;
+
+      case 'error':
+        console.error('Streaming error:', data.error);
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+        alert(`Streaming error: ${data.error}`);
+        break;
+    }
+  }
+
+  async function loadMessages() {
+    if (!selectedChatId) return;
+    try {
+      const res = await fetch(`${API_BASE}/chats/${selectedChatId}/messages`);
+      const json = await res.json();
+      setMessages(json);
+    } catch (err) {
+      console.error('Failed to load messages', err);
     }
   }
 

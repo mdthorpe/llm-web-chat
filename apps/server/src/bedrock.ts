@@ -1,5 +1,7 @@
 // apps/server/src/bedrock.ts
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockRuntimeClient, 
+    InvokeModelCommand,
+    InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 
 export const bedrockClient = new BedrockRuntimeClient({
   region: process.env.AWS_REGION
@@ -96,3 +98,95 @@ export async function summarizeText(
   return enforceOneSentenceSummary(raw);
 
 }
+
+export async function* generateWithBedrockStream(
+  modelId: string, 
+  conversation: ChatMessage[], 
+  ctx?: { reqId?: string; chatId?: string; messageId?: string; }
+): AsyncGenerator<string, void, unknown> {
+
+  // Mock mode for testing
+  if (MOCK_MODE) {
+    const lastMessage = conversation[conversation.length - 1];
+    const mockResponse = `[Mock Streaming Response] I received your message: "${lastMessage?.content}"`;
+    const words = mockResponse.split(' ');
+    
+    for (const word of words) {
+      yield word + ' ';
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return;
+  }
+
+  if (!modelId) {
+    yield 'Model ID is missing.';
+    return;
+  }
+
+  if ((process.env.BEDROCK_INFERENCE_PROFILE_ARN) || modelId.startsWith('anthropic.')) {
+    const systemPrompt = conversation
+      .filter((m) => m.role === 'system')
+      .map((m) => m.content)
+      .join('\n\n');
+
+    const nonSystemMessages = conversation.filter((m) => m.role !== 'system');
+
+    const requestBody = {
+      anthropic_version: 'bedrock-2023-05-31',
+      max_tokens: 1024,
+      messages: nonSystemMessages.map((m) => ({
+        role: m.role,
+        content: [
+          {
+            type: 'text',
+            text: m.content,
+          },
+        ],
+      })),
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+    } as const;
+
+    const inferenceProfileArn = process.env.BEDROCK_INFERENCE_PROFILE_ARN;
+    const targetModelId = inferenceProfileArn || modelId;
+
+    const command = new InvokeModelWithResponseStreamCommand({
+      modelId: targetModelId,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: new TextEncoder().encode(JSON.stringify(requestBody)),
+    } as any);
+
+    try {
+      const response = await bedrockClient.send(command);
+
+      if (response.body) {
+        for await (const chunk of response.body) {
+          try {
+            // Handle different chunk structures from AWS SDK
+            let chunkData;
+            if ((chunk as any).chunk?.bytes) {
+              chunkData = JSON.parse(new TextDecoder().decode((chunk as any).chunk.bytes));
+            } else if ((chunk as any).Bytes) {
+              chunkData = JSON.parse(new TextDecoder().decode((chunk as any).Bytes));
+            } else {
+              // Try to decode the chunk directly as a fallback
+              chunkData = JSON.parse(new TextDecoder().decode(chunk as unknown as Uint8Array));
+            }
+
+            if (chunkData.type === 'content_block_delta' && chunkData.delta?.type === 'text_delta') {
+              const textDelta = chunkData.delta.text;
+              yield textDelta;
+            }
+          } catch (error) {
+            console.warn('Failed to parse chunk:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Bedrock streaming error:', error);
+      yield 'Error occurred during streaming response.';
+    }
+  } else {
+    yield 'This model is not yet supported for streaming in the server. Try an Anthropic model.';
+  }
+} 

@@ -1,4 +1,4 @@
-import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly';
+import { PollyClient, SynthesizeSpeechCommand, VoiceId } from '@aws-sdk/client-polly';
 
 const polly = new PollyClient({ region: process.env.AWS_REGION });
 
@@ -8,7 +8,7 @@ export async function synthesizeToMp3(text: string, voiceId = 'Ruth') {
     Text: text,
     TextType: 'text', // or 'ssml'
     OutputFormat: 'mp3',
-    VoiceId: voiceId,
+    VoiceId: voiceId as VoiceId,
     Engine: 'neural', // use 'standard' if neural isn’t enabled for the voice
   });
   const res = await polly.send(cmd);
