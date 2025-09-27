@@ -3,7 +3,7 @@
 import WebSocket from 'ws';
 
 // Test streaming chat functionality
-const wsUrl = 'ws://localhost:3001/ws/stt'; // Note: using existing STT endpoint for now
+const wsUrl = 'ws://localhost:3001/ws/chat';
 
 // Create a unique test chat first
 async function createTestChat() {
