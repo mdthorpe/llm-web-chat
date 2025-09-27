@@ -351,7 +351,14 @@ export default function App() {
     }
   }
 
-  function handleStreamingMessage(data: any) {
+  type StreamingMessage =
+  | { type: 'ready' }
+  | { type: 'start'; messageId: string }
+  | { type: 'chunk'; messageId: string; text: string }
+  | { type: 'complete'; messageId: string; summary?: string }
+  | { type: 'error'; error: string };
+
+  function handleStreamingMessage(data: StreamingMessage) {
     switch (data.type) {
       case 'ready':
         console.log('WebSocket ready - connection established');
@@ -359,8 +366,8 @@ export default function App() {
 
       case 'start':
         console.log('Streaming started:', data.messageId);
-        setStreamingMessageId(data.messageId);
-        setIsStreaming(true);
+        streamingMessageIdRef.current = data.messageId;
+        isStreamingRef.current = true;
         setSending(false);                        // allow input again
         setMessages(prev => [
           ...prev,
@@ -374,31 +381,32 @@ export default function App() {
         ]);
         break;
 
-    case 'chunk':
-      if (!data.messageId || typeof data.text !== 'string') break;
-      setMessages(prev => {
-        const next = prev.some(msg => msg.id === data.messageId)
-          ? prev.map(msg =>
-              msg.id === data.messageId ? { ...msg, content: msg.content + data.text } : msg
-            )
-          : [
-              ...prev,
-              {
-                id: data.messageId,
-                chatId: selectedChatId ?? '',
-                role: 'assistant',
-                content: data.text,
-                createdAt: Date.now()
-              }
-            ];
-        return next;
-      });
-      break;
+        case 'chunk': {
+          if (!data.messageId || typeof data.text !== 'string') break;
+          setMessages(prev => {
+            if (prev.some(msg => msg.id === data.messageId)) {
+              return prev.map(msg =>
+                msg.id === data.messageId ? { ...msg, content: msg.content + data.text } : msg
+              );
+            }
+        
+            const newMsg: Message = {
+              id: data.messageId,
+              chatId: selectedChatId ?? '',
+              role: 'assistant',
+              content: data.text,
+              createdAt: Date.now(),
+            };
+        
+            return [...prev, newMsg];
+          });
+          break;
+        }
 
     case 'complete':
       console.log('Streaming completed:', data.messageId);
-      setIsStreaming(false);
-      setStreamingMessageId(null);
+      streamingMessageIdRef.current = null;
+      isStreamingRef.current = false;
       if (data.summary) {
         setMessages(prev =>
           prev.map(msg =>
@@ -415,8 +423,8 @@ export default function App() {
 
       case 'error':
         console.error('Streaming error:', data.error);
-        setIsStreaming(false);
-        setStreamingMessageId(null);
+        streamingMessageIdRef.current = null;
+        isStreamingRef.current = false;
         alert(`Streaming error: ${data.error}`);
         break;
     }
@@ -442,16 +450,23 @@ export default function App() {
           fetch(`${API_BASE}/models`),
           fetch(`${API_BASE}/chats`),
         ]);
-        const [{ defaultModelId }, modelsJson, chatsJson] = await Promise.all([
-          configRes.json(), modelsRes.json(), chatsRes.json()
-        ]);
-  
+
+        const [configJson, modelsJson, chatsJson] = await Promise.all([
+          configRes.json() as Promise<{ defaultModelId: string | null }>,
+          modelsRes.json() as Promise<Model[]>,
+          chatsRes.json() as Promise<Chat[]>,
+        ]);      
+
         setModels(modelsJson);
         setChats([...chatsJson].sort((a, b) => toMs(b.updatedAt) - toMs(a.updatedAt)));
-  
-        if (!newChatModelId && defaultModelId && modelsJson.some((m: any) => m.id === defaultModelId)) {
-          setNewChatModelId(defaultModelId);
-        }
+        
+        setNewChatModelId(prev =>
+          prev ||
+          (configJson.defaultModelId &&
+            modelsJson.some(m => m.id === configJson.defaultModelId)
+              ? configJson.defaultModelId
+              : prev)
+        );
       } finally {
         setLoading(false);
       }
@@ -503,7 +518,7 @@ export default function App() {
                 <button
                   aria-label="Delete chat"
                   title="Delete chat"
-                  className="absolute right-2 top-2 text-muted-foreground opacity-50 transition-opacity transition-colors
+                  className="absolute right-2 top-2 text-muted-foreground opacity-50 transition-colors
                             group-hover:opacity-100 hover:text-red-600 focus-visible:opacity-100
                             hover:ring-1 hover:ring-red-200 hover:bg-red-50 rounded"
                   onClick={(e) => {
@@ -707,12 +722,4 @@ export default function App() {
       </main>
     </div>
   );
-}
-
-async function safeJson(res: Response) {
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
 }
