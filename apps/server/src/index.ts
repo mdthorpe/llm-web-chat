@@ -6,7 +6,7 @@
   import { chats, messages } from './db/schema';
   import { eq } from 'drizzle-orm';
   import { randomUUID } from 'crypto';
-  import { generateWithBedrock } from './bedrock';
+  import { generateWithBedrock, generateWithBedrockStream } from './bedrock';
   import { summarizeText } from './bedrock';
   import { MODEL_CATALOG, SUPPORTED_MODEL_IDS } from './config/models';
   import { synthesizeToMp3 } from './tts';
@@ -283,9 +283,10 @@ app.post('/chats/:id/generate-title', async (c) => {
       },
     });
   });
+
   
   // Start the server
-  const port = Number(process.env.PORT ?? 3000);
+  const port = Number(process.env.PORT ?? 3001);
 
   function wsToAudioStream(ws: Ws) {
     const queue: Uint8Array[] = [];
@@ -302,42 +303,142 @@ app.post('/chats/:id/generate-title', async (c) => {
       end() { done = true; }
     };
   }
+
+  async function handleStreamingChat(ws: Ws, data: any) {
+    const { chatId, content } = data;
+
+    if (!chatId || !content) {
+      ws.send(JSON.stringify({ type: 'error', error: 'Missing chatId or content' }));
+      return;
+    }
+
+    try {
+      // Ensure chat exists and get modelId
+      const [chat] = await db.select().from(chats).where(eq(chats.id, chatId));
+      if (!chat) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Chat not found' }));
+        return;
+      }
+
+      if (!SUPPORTED_MODEL_IDS.has(chat.modelId)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Unsupported model for this chat' }));
+        return;
+      }
+
+      // Insert user message
+      const messageId = randomUUID();
+      const now = new Date();
+      await db.insert(messages).values({
+        id: messageId,
+        chatId,
+        role: 'user',
+        content,
+        createdAt: now
+      }); 
+
+      // Get conversation history
+      const history = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.chatId, chatId))
+      .orderBy(messages.createdAt);
+
+      // Send start signal
+      ws.send(JSON.stringify({ type: 'start', messageId }));
+      let fullResponse = '';
+
+      const streamGenerator = generateWithBedrockStream(
+        chat.modelId,
+        history,
+        { reqId: randomUUID(), chatId, messageId }
+      );
+  
+      for await (const chunk of streamGenerator) {
+        fullResponse += chunk;
+        ws.send(JSON.stringify({ type: 'chunk', messageId, text: chunk }));
+      }
+  
+      // Insert assistant message
+      const responseId = randomUUID();
+      const responseTime = new Date();
+
+      
+      // Generate summary (this could also be streamed in the future)
+      let summary: string | undefined;
+      const firstSentence = fullResponse.trim().match(/^(.+?[.!?])( |\n|$)/s)?.[1] ?? fullResponse.trim();
+
+      if (firstSentence && firstSentence.length >= 15 && firstSentence.length <= 300 &&
+          firstSentence.split(/\s+/).filter(Boolean).length >= 3 &&
+          firstSentence.split(/\s+/).filter(Boolean).length <= 60 &&
+          !firstSentence.includes('```') && !firstSentence.includes('http') &&
+          !/[{};]/.test(firstSentence) && /^[A-Z]/.test(firstSentence)) {
+        summary = firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`;
+      } else {
+        summary = await summarizeText(fullResponse, undefined, { reqId: randomUUID() });
+      }
+
+      // Insert assistant message once with the final summary
+      await db.insert(messages).values({
+        id: responseId,
+        chatId,
+        role: 'assistant',
+        content: fullResponse,
+        summary,
+        createdAt: responseTime
+      });
+
+      // Send completion signal
+      ws.send(JSON.stringify({ type: 'complete', messageId, responseId, summary }));
+
+    } catch (error) {
+      console.error('Streaming chat error:', error);
+      ws.send(JSON.stringify({ type: 'error', error: String(error) }));
+    }
+  }
   
   export const server = Bun.serve({
     port,
     websocket: {
       async open(ws: Ws) {
-        const audio = wsToAudioStream(ws);
-        // stash on ws for use in message/close
-        // @ts-expect-error
-        ws.audio = audio;
-  
-        // Send a ready event so clients can verify the connection upgraded
-        try { ws.send(JSON.stringify({ type: 'ready' })); } catch {}
+        const connectionType = ws.data?.type; // This comes from the fetch handler
 
-        try {
-          const cmd = new StartStreamTranscriptionCommand({
-            LanguageCode: 'en-US',
-            MediaEncoding: 'pcm',
-            MediaSampleRateHertz: 16000,
-            AudioStream: audio as any,
-            EnablePartialResultsStabilization: true,
-            PartialResultsStability: 'medium',
-          });
-          const res = await transcribe.send(cmd);
-          for await (const evt of res.TranscriptResultStream!) {
-            const results = (evt as any).TranscriptEvent?.Transcript?.Results || [];
-            for (const r of results) {
-              const text = (r.Alternatives?.[0]?.Transcript || '').trim();
-              if (text) {
-                ws.send(JSON.stringify({ type: r.IsPartial ? 'partial' : 'final', text }));
+        if (connectionType === 'stt') {
+          const audio = wsToAudioStream(ws);
+          // stash on ws for use in message/close
+          // @ts-expect-error
+          ws.audio = audio;
+    
+          // Send a ready event so clients can verify the connection upgraded
+          try { ws.send(JSON.stringify({ type: 'ready' })); } catch {}
+
+          try {
+            const cmd = new StartStreamTranscriptionCommand({
+              LanguageCode: 'en-US',
+              MediaEncoding: 'pcm',
+              MediaSampleRateHertz: 16000,
+              AudioStream: audio as any,
+              EnablePartialResultsStabilization: true,
+              PartialResultsStability: 'medium',
+            });
+            const res = await transcribe.send(cmd);
+            for await (const evt of res.TranscriptResultStream!) {
+              const results = (evt as any).TranscriptEvent?.Transcript?.Results || [];
+              for (const r of results) {
+                const text = (r.Alternatives?.[0]?.Transcript || '').trim();
+                if (text) {
+                  ws.send(JSON.stringify({ type: r.IsPartial ? 'partial' : 'final', text }));
+                }
               }
             }
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'error', error: String(e) }));
+          } finally {
+            ws.close();
           }
-        } catch (e) {
-          ws.send(JSON.stringify({ type: 'error', error: String(e) }));
-        } finally {
-          ws.close();
+        } else if (connectionType === 'chat') {
+          // Handle streaming chat connections  
+          // Just send ready signal, no audio setup needed
+          try { ws.send(JSON.stringify({ type: 'ready' })); } catch {}
         }
       },
       message(ws: Ws, data) {
@@ -350,6 +451,16 @@ app.post('/chats/:id/generate-title', async (c) => {
           ws.audio?.end();
         } else if (typeof data === 'string' && data === 'PING') {
           try { ws.send(JSON.stringify({ type: 'pong' })); } catch {}
+        } else if (typeof data === 'string') {
+          // Handle streaming chat requests
+          try {
+            const parsedData = JSON.parse(data);
+            if (parsedData.type === 'chat') {
+              void handleStreamingChat(ws, parsedData);
+            }
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
+          }
         }
       },
       close(ws: Ws) {
@@ -360,7 +471,11 @@ app.post('/chats/:id/generate-title', async (c) => {
     fetch(req, srv) {
       const { pathname } = new URL(req.url);
       if (pathname === '/ws/stt') {
-        if (srv.upgrade(req)) return;
+        if (srv.upgrade(req, { data: { type: 'stt' } })) return;
+        return new Response('Expected WebSocket upgrade', { status: 426 });
+      }
+      if (pathname === '/ws/chat') {
+        if (srv.upgrade(req, { data: { type: 'chat' } })) return;
         return new Response('Expected WebSocket upgrade', { status: 426 });
       }
       return app.fetch(req);

@@ -45,7 +45,7 @@ export type SttHandlers = {
         proc.disconnect();
         src.disconnect();
         ctx.close();
-        ws.readyState === WebSocket.OPEN ? ws.send('END') : void 0;
+        if (ws.readyState === WebSocket.OPEN) ws.send('END');
         ws.close();
         media.getTracks().forEach((t) => t.stop());
       } catch {

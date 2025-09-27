@@ -11,7 +11,10 @@
     "dev": "bunx concurrently -n server,web -c green,cyan \"bun run dev:server\" \"bun run dev:web\"",
     "dev:server": "cd apps/server && bun run dev",
     "dev:web": "cd apps/web && bun run dev",
-    "build": "bun --filter @llm-web-chat/* run build"
+    "build": "bun --filter @llm-web-chat/* run build",
+    "test:streaming": "node tests/test-streaming.js",
+    "test:streaming-mock": "MOCK_BEDROCK=true npx tsx tests/test-streaming-mock.js",
+    "test": "bun run test:streaming-mock"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -20,7 +23,9 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "tsx": "^4.20.5",
+    "ws": "^8.18.3"
   },
   "overrides": {
     "@aws-sdk/client-bedrock-runtime": "^3.893.0"
